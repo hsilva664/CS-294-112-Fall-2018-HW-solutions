@@ -1,0 +1,15 @@
+policy_params['hidden']['FeedforwardNet']['layer_0']['AffineLayer']['W']
+
+
+Hopper
+Input size: 11
+Layer 0: W = 11x64; b = 64 (tanh)
+Layer 1: W = 64x64; b = 64 (tanh)
+Out layer: W = 64x3; b = 3
+
+Reacher
+Input size: 11
+Layer 0: W = 11x64; b = 64 (tanh)
+Layer 1: W = 64x64; b = 64 (tanh)
+Out layer: W = 64x2; b = 2
+
