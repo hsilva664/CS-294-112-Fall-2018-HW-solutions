@@ -1,0 +1,19 @@
+python3 q4_run.py
+(copy generated folder to question_4/data)
+python3 q4_plot.py
+
+python3 q5_run.py
+(copy generated folder to question_5/data)
+python3 q5_find_best_lr_bs.py
+(plot it manually using plot_and_save.py <input_folder> --outname <output_filename>)
+
+python3 q6_run.py
+(copy generated folder to question_6/data)
+python3 q6_plot.py
+
+python3 q7_run.py
+(copy generated folder to question_7/part_1/data)
+python3 q7_plot_all_lr_bs.py
+python3 q7_run_ablation.py
+(copy generated folder to question_7/part_2/data)
+python3 q7_plot_ablation.py

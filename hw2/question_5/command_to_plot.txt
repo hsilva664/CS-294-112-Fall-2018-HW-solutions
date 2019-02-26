@@ -1,0 +1,6 @@
+python3 plot.py data/ip_b_200_lr_0.010000_InvertedPendulum-v2_23-02-2019_17-37-12
+
+Due to the high variance of the runs, the parameters that could keep an average (over 4 experiments) of rewards over 700 for the
+last 10 iterations were considered to converge to 1000. The highest lr + lowest bs that achieved this were (0.01, 200). In the plot,
+it is possible to see that the average gets to 1000 on the last few iterations. However, due to the high variance of the data,
+some runs fall below 1000 in the last 10 iterations.

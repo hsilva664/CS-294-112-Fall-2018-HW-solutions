@@ -1,0 +1,5 @@
+Answers
+
+-Reward to go improves performance on both cases
+-Advantage centering slightly improves rewards
+-Batch size helped the policy get to the reward of 200 faster

@@ -4,6 +4,53 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
+        {
+            "name": "Python: HW2 Continuous",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_pg_f18.py",            
+            "args": [
+                "InvertedPendulum-v2",
+                "-ep",
+                "1000",
+                "--discount",
+                "0.9",
+                "-n",
+                "100",
+                "-e",
+                "3",
+                "-l",
+                "2",
+                "-s",
+                "64",
+                "-b",
+                "50",
+                "-lr",
+                "0.05",
+                "-rtg",
+                "--single_process",
+                "--exp_name",
+                "debug"
+            ],
+        },    
+        
+        {
+            "name": "Python: HW2 Discrete",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_pg_f18.py",            
+            "args": [
+                "CartPole-v0",
+                "-n",
+                "100",
+                "--discount",
+                "0.9",                
+                "-b",
+                "1000","-e","3","-l","1","-s","32","-dna","-rtg","--single_process","--exp_name","debug"
+            ],
+        },            
+
         {
             "name": "Python: Current File (Integrated Terminal)",
             "type": "python",

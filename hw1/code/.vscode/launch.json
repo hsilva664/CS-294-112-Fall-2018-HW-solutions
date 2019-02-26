@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Reinforcement HW1",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dagger.py",            
+            "args": [
+                "Humanoid-v2",
+                "--num_max_rollouts",
+                "10"                
+            ],                    
+
+        },        
+        {
             "name": "Python: Current File (Integrated Terminal)",
             "type": "python",
             "request": "launch",
