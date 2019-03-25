@@ -6,6 +6,8 @@ import random
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
+from multiprocessing import Process
+from tensorflow.python import debug as tf_debug
 
 import dqn
 from dqn_utils import *
@@ -59,8 +61,10 @@ def lander_kwargs():
 
 def lander_learn(env,
                  session,
+                 seed,
+                 exp_name,
                  num_timesteps,
-                 seed):
+                 double_q):
 
     optimizer = lander_optimizer()
     stopping_criterion = lander_stopping_criterion(num_timesteps)
@@ -69,9 +73,11 @@ def lander_learn(env,
     dqn.learn(
         env=env,
         session=session,
+        exp_name=exp_name,
+        seed = seed,         
         exploration=lander_exploration_schedule(num_timesteps),
         stopping_criterion=lander_stopping_criterion(num_timesteps),
-        double_q=True,
+        double_q=double_q,
         **lander_kwargs()
     )
     env.close()
@@ -81,15 +87,18 @@ def set_global_seeds(i):
     np.random.seed(i)
     random.seed(i)
 
-def get_session():
+def get_session(visible_gpus, debug):
     tf.reset_default_graph()
+    gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=visible_gpus) #Other GPU in use
     tf_config = tf.ConfigProto(
         inter_op_parallelism_threads=1,
         intra_op_parallelism_threads=1,
-        device_count={'GPU': 0})
+        gpu_options=gpu_options)
     # GPUs don't significantly speed up deep Q-learning for lunar lander,
     # since the observations are low-dimensional
     session = tf.Session(config=tf_config)
+    if debug:
+        session = tf_debug.LocalCLIDebugWrapperSession(session)        
     return session
 
 def get_env(seed):
@@ -104,13 +113,48 @@ def get_env(seed):
     return env
 
 def main():
-    # Run training
-    seed = 4565 # you may want to randomize this
-    print('random seed = %d' % seed)
-    env = get_env(seed)
-    session = get_session()
-    set_global_seeds(seed)
-    lander_learn(env, session, num_timesteps=500000, seed=seed)
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('exp_name', type=str)
+    parser.add_argument('--n_processes', type=int, default=1)
+    parser.add_argument('--debug', action='store_true')    
+    parser.add_argument('--visible_gpus', type=str, default='0')
+    parser.add_argument('--double_q', action='store_true')
+    args = parser.parse_args()
+
+    processes = []
+    seeds = []
+
+    def single_learning_process(seed):
+        # Run training
+        print('random seed = %d' % seed)
+
+        # Run training
+        env = get_env(seed)
+        session = get_session(args.visible_gpus, args.debug)
+        lander_learn(env, session, seed, args.exp_name, num_timesteps=500000, double_q = args.double_q)
+
+    if args.debug == True:
+        seed = random.randint(0, 9999)
+        single_learning_process(seed)
+    else:
+        for e in range(args.n_processes):   
+
+            seed = random.randint(0, 9999)
+            if seed not in seeds:
+                seeds.append(seed)       
+            else:
+                while seed in seeds:
+                    seed = random.randint(0, 9999)
+                seeds.append(seed)
+
+            proc = Process(target=single_learning_process, args=(seed,) )
+            proc.start()
+            processes.append(proc)
+
+        for p in processes:
+            p.join()             
 
 if __name__ == "__main__":
     main()

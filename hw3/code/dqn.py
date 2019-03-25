@@ -2,6 +2,7 @@ import uuid
 import time
 import pickle
 import sys
+import os
 import gym.spaces
 import itertools
 import numpy as np
@@ -21,6 +22,8 @@ class QLearner(object):
     q_func,
     optimizer_spec,
     session,
+    exp_name,
+    seed,
     exploration=LinearSchedule(1000000, 0.1),
     stopping_criterion=None,
     replay_buffer_size=1000000,
@@ -31,7 +34,6 @@ class QLearner(object):
     frame_history_len=4,
     target_update_freq=10000,
     grad_norm_clipping=10,
-    rew_file=None,
     double_q=True,
     lander=False):
     """Run Deep Q-learning algorithm.
@@ -99,7 +101,13 @@ class QLearner(object):
     self.env = env
     self.session = session
     self.exploration = exploration
-    self.rew_file = str(uuid.uuid4()) + '.pkl' if rew_file is None else rew_file
+    if not tf.gfile.Exists(os.path.join('plots',exp_name)):
+      tf.gfile.MakeDirs(os.path.join('plots',exp_name))
+    self.rew_file = os.path.join('plots',exp_name, str(seed)+'.pkl')
+
+    self.mean_100_rew = []
+    self.best_mean_rew = []
+    self.timesteps = []
 
     ###############
     # BUILD MODEL #
@@ -159,6 +167,29 @@ class QLearner(object):
     ######
 
     # YOUR CODE HERE
+
+    self.all_q_t_values = q_func(obs_t_float, self.num_actions, scope="q_func", reuse=tf.AUTO_REUSE)
+    all_target_q_tp1_values = q_func(obs_tp1_float, self.num_actions, scope="target_q_func", reuse=False)
+
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func')
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func')
+
+    irange = tf.expand_dims(tf.range(tf.shape(obs_t_float)[0]),-1)
+
+    if double_q == False:
+        targets = self.rew_t_ph + (1. - self.done_mask_ph) * gamma * tf.reduce_max(all_target_q_tp1_values, axis = 1)
+    else:
+        all_q_tp1_values = q_func(obs_tp1_float, self.num_actions, scope="q_func", reuse=tf.AUTO_REUSE)
+
+        coords = tf.concat([ irange, tf.expand_dims(tf.arg_max(all_q_tp1_values, 1, output_type=tf.int32 ),-1)], 1)
+        max_target_q_tp1_values = tf.gather_nd(all_target_q_tp1_values, coords)
+
+        targets = self.rew_t_ph + (1. - self.done_mask_ph) * gamma * max_target_q_tp1_values
+
+    coords = tf.concat([irange, tf.expand_dims(self.act_t_ph,-1)],1)
+    observed_q_t_values = tf.gather_nd(self.all_q_t_values, coords)
+
+    self.total_error = tf.reduce_mean(huber_loss( observed_q_t_values - targets ))
 
     ######
 
@@ -229,6 +260,28 @@ class QLearner(object):
     #####
 
     # YOUR CODE HERE
+    obs_idx = self.replay_buffer.store_frame(self.last_obs)
+    obs = self.replay_buffer.encode_recent_observation()
+
+    all_q_t_values = self.session.run(self.all_q_t_values, feed_dict={self.obs_t_ph: np.expand_dims(obs, axis=0)})
+    all_q_t_values = all_q_t_values[0]
+
+    exploration_rate = self.exploration.value(self.t)
+    amax = np.argmax(all_q_t_values, axis = 0)
+    p = random.random()
+    if p < exploration_rate:
+        act_idx = random.randint(0,self.num_actions - 2)
+        curr_action = act_idx if act_idx < amax else act_idx + 1
+    else:
+        curr_action = amax
+    obs_tp1, reward, done, info = self.env.step(curr_action)
+
+    if done == True:
+        obs_tp1 = self.env.reset()
+
+    self.last_obs = obs_tp1
+    self.replay_buffer.store_effect(obs_idx, curr_action, reward, done)
+
 
   def update_model(self):
     ### 3. Perform experience replay and train the network.
@@ -275,9 +328,31 @@ class QLearner(object):
 
       # YOUR CODE HERE
 
+      obs_t_batch, act_batch, rew_batch, obs_tp1_batch, done_mask = self.replay_buffer.sample(self.batch_size)
+
+      _ = self.session.run(self.train_fn, feed_dict={
+            self.obs_t_ph: obs_t_batch,
+            self.act_t_ph: act_batch,
+            self.rew_t_ph: rew_batch,
+            self.obs_tp1_ph: obs_tp1_batch,
+            self.done_mask_ph: done_mask,
+            self.learning_rate: self.optimizer_spec.lr_schedule.value(self.t)
+      })
+
+
+      if self.num_param_updates % self.target_update_freq == 0:
+        _ = self.session.run(self.update_target_fn)
+
       self.num_param_updates += 1
 
     self.t += 1
+
+
+  def initialize_model(self):
+    if self.model_initialized == False:
+      initialize_interdependent_variables(self.session, tf.global_variables(), {
+      })
+      self.model_initialized = True    
 
   def log_progress(self):
     episode_rewards = get_wrapper_by_name(self.env, "Monitor").get_episode_rewards()
@@ -302,11 +377,19 @@ class QLearner(object):
 
       sys.stdout.flush()
 
+      self.mean_100_rew.append(self.mean_episode_reward)
+      self.best_mean_rew.append(self.best_mean_episode_reward)
+      self.timesteps.append(self.t)
+
       with open(self.rew_file, 'wb') as f:
-        pickle.dump(episode_rewards, f, pickle.HIGHEST_PROTOCOL)
+        out_obj = {'mean_100_rew': np.asarray(self.mean_100_rew),
+                  'best_mean_rew': np.asarray(self.best_mean_rew),
+                  'timesteps': np.asarray(self.timesteps)}
+        pickle.dump( out_obj, f, pickle.HIGHEST_PROTOCOL)
 
 def learn(*args, **kwargs):
   alg = QLearner(*args, **kwargs)
+  alg.initialize_model()
   while not alg.stopping_criterion_met():
     alg.step_env()
     # at this point, the environment should have been advanced one step (and

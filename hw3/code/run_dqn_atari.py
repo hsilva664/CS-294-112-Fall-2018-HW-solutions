@@ -6,6 +6,8 @@ import random
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
+from multiprocessing import Process
+from tensorflow.python import debug as tf_debug
 
 import dqn
 from dqn_utils import *
@@ -30,7 +32,10 @@ def atari_model(img_in, num_actions, scope, reuse=False):
 
 def atari_learn(env,
                 session,
-                num_timesteps):
+                seed,
+                exp_name,
+                num_timesteps,
+                double_q):
     # This is just a rough estimate
     num_iterations = float(num_timesteps) / 4.0
 
@@ -65,6 +70,8 @@ def atari_learn(env,
         q_func=atari_model,
         optimizer_spec=optimizer,
         session=session,
+        exp_name=exp_name,
+        seed = seed,
         exploration=exploration_schedule,
         stopping_criterion=stopping_criterion,
         replay_buffer_size=1000000,
@@ -75,14 +82,14 @@ def atari_learn(env,
         frame_history_len=4,
         target_update_freq=10000,
         grad_norm_clipping=10,
-        double_q=True
+        double_q=double_q        
     )
     env.close()
 
-def get_available_gpus():
-    from tensorflow.python.client import device_lib
-    local_device_protos = device_lib.list_local_devices()
-    return [x.physical_device_desc for x in local_device_protos if x.device_type == 'GPU']
+# def get_available_gpus():
+#     from tensorflow.python.client import device_lib
+#     local_device_protos = device_lib.list_local_devices()
+#     return [x.physical_device_desc for x in local_device_protos if x.device_type == 'GPU']
 
 def set_global_seeds(i):
     try:
@@ -94,13 +101,17 @@ def set_global_seeds(i):
     np.random.seed(i)
     random.seed(i)
 
-def get_session():
+def get_session(visible_gpus, debug):   
     tf.reset_default_graph()
+    gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=visible_gpus) #Other GPU in use
     tf_config = tf.ConfigProto(
         inter_op_parallelism_threads=1,
-        intra_op_parallelism_threads=1)
-    session = tf.Session(config=tf_config)
-    print("AVAILABLE GPUS: ", get_available_gpus())
+        intra_op_parallelism_threads=1,
+        gpu_options=gpu_options)
+    session = tf.Session(config=tf_config)   
+    if debug:
+        session = tf_debug.LocalCLIDebugWrapperSession(session)      
+    # print("AVAILABLE GPUS: ", get_available_gpus())
     return session
 
 def get_env(task, seed):
@@ -115,16 +126,52 @@ def get_env(task, seed):
 
     return env
 
-def main():
-    # Get Atari games.
-    task = gym.make('PongNoFrameskip-v4')
 
-    # Run training
-    seed = random.randint(0, 9999)
-    print('random seed = %d' % seed)
-    env = get_env(task, seed)
-    session = get_session()
-    atari_learn(env, session, num_timesteps=2e8)
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('exp_name', type=str)
+    parser.add_argument('--n_processes', type=int, default=1)
+    parser.add_argument('--debug', action='store_true')    
+    parser.add_argument('--visible_gpus', type=str, default='0')
+    parser.add_argument('--double_q', action='store_true')
+    args = parser.parse_args()
+
+    processes = []
+    seeds = []
+
+    def single_learning_process(seed):
+        # Get Atari games.
+        task = gym.make('PongNoFrameskip-v4')
+
+        # Run training
+        print('random seed = %d' % seed)
+        env = get_env(task, seed)
+        session = get_session(args.visible_gpus, args.debug)
+        atari_learn(env, session, seed, args.exp_name, num_timesteps=2e7, double_q = args.double_q)
+
+    if args.debug == True:
+        seed = random.randint(0, 9999)
+        single_learning_process(seed)
+    else:
+        for e in range(args.n_processes):   
+
+            seed = random.randint(0, 9999)
+            if seed not in seeds:
+                seeds.append(seed)       
+            else:
+                while seed in seeds:
+                    seed = random.randint(0, 9999)
+                seeds.append(seed)
+
+            proc = Process(target=single_learning_process, args=(seed,) )
+            proc.start()
+            processes.append(proc)
+
+        for p in processes:
+            p.join()            
+
 
 if __name__ == "__main__":
     main()
