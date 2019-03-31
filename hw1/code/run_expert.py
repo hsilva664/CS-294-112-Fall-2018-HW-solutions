@@ -78,6 +78,8 @@ def main():
                     break
             returns.append(totalr)
 
+        env.close()
+
         print('returns', returns)
         print('mean return', np.mean(returns))
         print('std of return', np.std(returns))
@@ -89,6 +91,8 @@ def main():
                        'returns': { 'values': returns, 'mean': np.mean(returns), 'std': np.std(returns)} }
 
         if args.n_rollout_folder == False:
+            if not tf.gfile.Exists( GlobalDefs.expert_results_folder ) :  
+                tf.gfile.MakeDirs(GlobalDefs.expert_results_folder)            
             with open(os.path.join(GlobalDefs.expert_results_folder, string_prefix + args.envname + '.pkl'), 'wb') as f:
                 pickle.dump(expert_data, f, pickle.HIGHEST_PROTOCOL)
         else:

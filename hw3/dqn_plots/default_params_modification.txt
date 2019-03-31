@@ -1,0 +1,1 @@
+To be able to paralellize runs and perform experiments more than once, the Atari replay buffer size was modified from 1,000,000 to 300,000

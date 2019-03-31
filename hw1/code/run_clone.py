@@ -84,6 +84,8 @@ def main():
                     break
             returns.append(totalr)
 
+        env.close()
+
         print('returns', returns)
         print('mean return', np.mean(returns))
         print('std of return', np.std(returns))

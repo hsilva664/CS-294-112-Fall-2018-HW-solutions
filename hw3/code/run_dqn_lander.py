@@ -48,7 +48,6 @@ def lander_kwargs():
     return {
         'optimizer_spec': lander_optimizer(),
         'q_func': lander_model,
-        'replay_buffer_size': 50000,
         'batch_size': 32,
         'gamma': 1.00,
         'learning_starts': 1000,
@@ -64,7 +63,8 @@ def lander_learn(env,
                  seed,
                  exp_name,
                  num_timesteps,
-                 double_q):
+                 double_q,
+                 replay_buffer_size):
 
     optimizer = lander_optimizer()
     stopping_criterion = lander_stopping_criterion(num_timesteps)
@@ -74,10 +74,11 @@ def lander_learn(env,
         env=env,
         session=session,
         exp_name=exp_name,
-        seed = seed,         
+        seed = seed,
         exploration=lander_exploration_schedule(num_timesteps),
         stopping_criterion=lander_stopping_criterion(num_timesteps),
         double_q=double_q,
+        replay_buffer_size = replay_buffer_size,
         **lander_kwargs()
     )
     env.close()
@@ -121,6 +122,7 @@ def main():
     parser.add_argument('--debug', action='store_true')    
     parser.add_argument('--visible_gpus', type=str, default='0')
     parser.add_argument('--double_q', action='store_true')
+    parser.add_argument('--replay_buffer_size', type=int, default=50000)
     args = parser.parse_args()
 
     processes = []
@@ -133,7 +135,7 @@ def main():
         # Run training
         env = get_env(seed)
         session = get_session(args.visible_gpus, args.debug)
-        lander_learn(env, session, seed, args.exp_name, num_timesteps=500000, double_q = args.double_q)
+        lander_learn(env, session, seed, args.exp_name, num_timesteps=500000, double_q = args.double_q, replay_buffer_size = args.replay_buffer_size)
 
     if args.debug == True:
         seed = random.randint(0, 9999)

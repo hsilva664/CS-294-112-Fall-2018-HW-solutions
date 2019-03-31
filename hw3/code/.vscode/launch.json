@@ -10,7 +10,7 @@
         "request": "launch",
         "program": "${workspaceFolder}/plot_from_pkl.py",
         "console": "integratedTerminal",
-        "args": [ "3aa7fdd8-8df2-4204-9f87-83c645dcb280.pkl" ]
+        "args": [ "Qlearn_Q1_atari" ]
     },   
 
         {
@@ -19,8 +19,10 @@
             "request": "launch",
             "program": "${workspaceFolder}/run_dqn_atari.py",
             "console": "integratedTerminal",
-            // "args": {
-            // }
+            "args": [
+                "debug",
+                "--debug"
+            ]
         },        
 
         {

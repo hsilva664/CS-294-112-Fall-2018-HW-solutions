@@ -35,7 +35,8 @@ def atari_learn(env,
                 seed,
                 exp_name,
                 num_timesteps,
-                double_q):
+                double_q,
+                replay_buffer_size):
     # This is just a rough estimate
     num_iterations = float(num_timesteps) / 4.0
 
@@ -74,7 +75,7 @@ def atari_learn(env,
         seed = seed,
         exploration=exploration_schedule,
         stopping_criterion=stopping_criterion,
-        replay_buffer_size=1000000,
+        replay_buffer_size=replay_buffer_size,
         batch_size=32,
         gamma=0.99,
         learning_starts=50000,
@@ -136,6 +137,7 @@ def main():
     parser.add_argument('--debug', action='store_true')    
     parser.add_argument('--visible_gpus', type=str, default='0')
     parser.add_argument('--double_q', action='store_true')
+    parser.add_argument('--replay_buffer_size', type=int, default=300000)
     args = parser.parse_args()
 
     processes = []
@@ -149,7 +151,7 @@ def main():
         print('random seed = %d' % seed)
         env = get_env(task, seed)
         session = get_session(args.visible_gpus, args.debug)
-        atari_learn(env, session, seed, args.exp_name, num_timesteps=2e7, double_q = args.double_q)
+        atari_learn(env, session, seed, args.exp_name, num_timesteps=2e7, double_q = args.double_q, replay_buffer_size = args.replay_buffer_size)
 
     if args.debug == True:
         seed = random.randint(0, 9999)

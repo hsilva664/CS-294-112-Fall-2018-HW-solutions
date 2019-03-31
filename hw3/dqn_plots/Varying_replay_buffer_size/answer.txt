@@ -1,0 +1,2 @@
+The replay buffer size was the chosen parameters because it is directly related to the system's RAM size constraint, meaning a smaller replay buffer size might be needed if RAM is particularly
+limited. The results on all 3 settings (RAM-based Pong, image-based Pong and Lunar Lander) show that the algorithm is robust to such a modification.

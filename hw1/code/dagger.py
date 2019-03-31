@@ -229,6 +229,8 @@ def main():
                 if steps >= max_steps:
                     break
 
+            env.close()
+
             observations = np.array(observations)
             expert_actions = np.array(expert_actions)
 
