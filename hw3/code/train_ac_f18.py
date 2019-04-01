@@ -5,7 +5,6 @@ Adapted for CS294-112 Fall 2018 by Soroush Nasiriany, Sid Reddy, and Greg Kahn
 """
 import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
 import gym
 import logz
 import os
@@ -90,7 +89,7 @@ class Agent(object):
         self.debug = debug        
 
     def init_tf_sess(self):
-        gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=str(self.gpu))
+        gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=self.gpu)
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1, gpu_options=gpu_options)
         self.sess = tf.Session(config=tf_config)
 
@@ -111,7 +110,6 @@ class Agent(object):
                 sy_ac_na: placeholder for actions
                 sy_adv_n: placeholder for advantages
         """
-        raise NotImplementedError
         sy_ob_no = tf.placeholder(shape=[None, self.ob_dim], name="ob", dtype=tf.float32)
         if self.discrete:
             sy_ac_na = tf.placeholder(shape=[None], name="ac", dtype=tf.int32) 
@@ -261,7 +259,7 @@ class Agent(object):
         # This is used in the loss function.
         self.sy_logprob_n = self.get_log_prob(self.policy_parameters, self.sy_ac_na)
 
-        actor_loss = tf.reduce_sum(-self.sy_logprob_n * self.sy_adv_n)
+        actor_loss = tf.reduce_mean(self.sy_logprob_n * self.sy_adv_n)
         self.actor_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(actor_loss)
 
         # define the critic
@@ -297,24 +295,21 @@ class Agent(object):
                 env.render()
                 time.sleep(0.1)
             obs.append(ob)
-            raise NotImplementedError
-            ac = None # YOUR HW2 CODE HERE
+            ac = self.sess.run(self.sy_sampled_ac, feed_dict={self.sy_ob_no: np.expand_dims(ob, axis=0)})
             ac = ac[0]
             acs.append(ac)
             ob, rew, done, _ = env.step(ac)
             # add the observation after taking a step to next_obs
-            # YOUR CODE HERE
-            raise NotImplementedError
+            next_obs.append(ob)
             rewards.append(rew)
             steps += 1
             # If the episode ended, the corresponding terminal value is 1
             # otherwise, it is 0
-            # YOUR CODE HERE
             if done or steps > self.max_path_length:
-                raise NotImplementedError
+                terminals.append(1)
                 break
             else:
-                raise NotImplementedError
+                terminals.append(0)
         path = {"observation" : np.array(obs, dtype=np.float32), 
                 "reward" : np.array(rewards, dtype=np.float32), 
                 "action" : np.array(acs, dtype=np.float32),
@@ -348,12 +343,18 @@ class Agent(object):
         # Note: don't forget to use terminal_n to cut off the V(s') term when computing Q(s, a)
         # otherwise the values will grow without bound.
         # YOUR CODE HERE
-        raise NotImplementedError
-        adv_n = None
+        
+        next_v = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob_no: next_ob_no})
+        curr_v = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob_no: ob_no})
+
+        Q_estimates = re_n + self.gamma * (1. - terminal_n) * next_v
+
+        adv_n = Q_estimates - curr_v
 
         if self.normalize_advantages:
-            raise NotImplementedError
-            adv_n = None # YOUR_HW2 CODE_HERE
+            # On the next line, implement a trick which is known empirically to reduce variance
+            # in policy gradient methods: normalize adv_n to have mean zero and std=1.
+            adv_n = (adv_n - np.mean(adv_n)) / ( np.std(adv_n) + 1e-10 )
         return adv_n
 
     def update_critic(self, ob_no, next_ob_no, re_n, terminal_n):
@@ -383,7 +384,11 @@ class Agent(object):
         # Note: don't forget to use terminal_n to cut off the V(s') term when computing the target
         # otherwise the values will grow without bound.
         # YOUR CODE HERE
-        raise NotImplementedError
+        for i in range(self.num_target_updates):
+            next_v = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob_no: next_ob_no})
+            target_n = re_n + self.gamma * (1. - terminal_n) * next_v
+            for j in range(self.num_grad_steps_per_target_update):
+                self.sess.run(self.critic_update_op, feed_dict={self.sy_target_n: target_n, self.sy_ob_no: ob_no})
 
     def update_actor(self, ob_no, ac_na, adv_n):
         """ 
@@ -418,7 +423,9 @@ def train_AC(
         normalize_advantages,
         seed,
         n_layers,
-        size):
+        size,
+        gpu,
+        debug):        
 
     start = time.time()
 
@@ -474,7 +481,7 @@ def train_AC(
         'normalize_advantages': normalize_advantages,
     }
 
-    agent = Agent(computation_graph_args, sample_trajectory_args, estimate_advantage_args) #estimate_return_args
+    agent = Agent(computation_graph_args, sample_trajectory_args, estimate_advantage_args, gpu=gpu, debug=debug) #estimate_return_args
 
     # build computation graph
     agent.build_computation_graph()
@@ -505,7 +512,9 @@ def train_AC(
         # (2) use the updated critic to compute the advantage by, calling agent.estimate_advantage
         # (3) use the estimated advantage values to update the actor, by calling agent.update_actor
         # YOUR CODE HERE
-        raise NotImplementedError
+        agent.update_critic(ob_no, next_ob_no, re_n, terminal_n)
+        adv_n = agent.estimate_advantage(ob_no, next_ob_no, re_n, terminal_n)
+        agent.update_actor(ob_no, ac_na, adv_n)
 
         # Log diagnostics
         returns = [path["reward"].sum() for path in paths]
@@ -542,6 +551,9 @@ def main():
     parser.add_argument('--n_experiments', '-e', type=int, default=1)
     parser.add_argument('--n_layers', '-l', type=int, default=2)
     parser.add_argument('--size', '-s', type=int, default=64)
+    parser.add_argument('--visible_gpus', type=str, default='0')
+    parser.add_argument('--single_process', action='store_true')
+    parser.add_argument('--debug', action='store_true')    
     args = parser.parse_args()
 
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
@@ -577,19 +589,23 @@ def main():
                 normalize_advantages=not(args.dont_normalize_advantages),
                 seed=seed,
                 n_layers=args.n_layers,
-                size=args.size
+                size=args.size,
+                gpu=args.visible_gpus,
+                debug=args.debug                
                 )
-        # # Awkward hacky process runs, because Tensorflow does not like
-        # # repeatedly calling train_AC in the same thread.
-        p = Process(target=train_func, args=tuple())
-        p.start()
-        processes.append(p)
-        # if you comment in the line below, then the loop will block 
-        # until this process finishes
-        # p.join()
 
-    for p in processes:
-        p.join()
+        if args.single_process or args.debug:
+            train_func()
+        else:
+            # # Awkward hacky process runs, because Tensorflow does not like
+            # # repeatedly calling train_AC in the same thread.
+            p = Process(target=train_func, args=tuple())
+            p.start()
+            processes.append(p)
+
+    if not (args.single_process or args.debug):
+        for p in processes:
+            p.join()
         
 
 if __name__ == "__main__":
