@@ -1,0 +1,10 @@
+bc0.001_kl0.1_dlr0.005_dti1000 explorates more aggresively (higher bonus reward for new states)
+and is thus able to get to better rewards first. However, since it has a lower number of density
+training iterations, its state probabilities might be inaccurate and exploration gets to a lower
+maximum compared to the other setting. Another possibility for its lower maximum is the fact that,
+with those parameters, the agent gets stuck in exploring and does not take advantage of exploitation.
+bc0.0001_kl0.1_dlr0.005_dti10000 explorates more conservatively and thus takes longer to get to
+good rewards. However, its values progress better than those of the other setting, which might be
+explained by these conservative states coupled with more accurate state probabilities (which are due
+to the larger number of density training iterations). This parameters setting better weights the
+tradeoffs between exploration and exploitation.
