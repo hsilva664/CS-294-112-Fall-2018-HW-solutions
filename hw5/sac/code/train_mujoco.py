@@ -5,6 +5,7 @@ import numpy as np
 import os
 import tensorflow as tf
 import time
+from tensorflow.python import debug as tf_debug
 
 import nn
 from sac import SAC
@@ -12,7 +13,7 @@ import utils
 
 from multiprocessing import Process
 
-def train_SAC(env_name, exp_name, seed, logdir):
+def train_SAC(env_name, exp_name, seed, reparametrize, two_qf, old_funct, logdir, debug, gpu):
     alpha = {
         'Ant-v2': 0.1,
         'HalfCheetah-v2': 0.2,
@@ -26,11 +27,11 @@ def train_SAC(env_name, exp_name, seed, logdir):
         'batch_size': 256,
         'discount': 0.99,
         'learning_rate': 1e-3,
-        'reparameterize': False,
+        'reparameterize': reparametrize,
         'tau': 0.01,
         'epoch_length': 1000,
         'n_epochs': 500,
-        'two_qf': False,
+        'two_qf': two_qf,
     }
     sampler_params = {
         'max_episode_length': 1000,
@@ -89,15 +90,20 @@ def train_SAC(env_name, exp_name, seed, logdir):
     policy = nn.GaussianPolicy(
         action_dim=env.action_space.shape[0],
         reparameterize=algorithm_params['reparameterize'],
+        old_funct = old_funct,
         **policy_params)
 
     sampler.initialize(env, policy, replay_pool)
 
     algorithm = SAC(**algorithm_params)
 
-    tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
-    tf_config.gpu_options.allow_growth = True  # may need if using GPU
-    with tf.Session(config=tf_config):
+    gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=gpu)
+    tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1, gpu_options=gpu_options)
+    with tf.Session(config=tf_config) as sess:
+
+        if debug:
+            sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+
         algorithm.build(
             env=env,
             policy=policy,
@@ -106,7 +112,7 @@ def train_SAC(env_name, exp_name, seed, logdir):
             value_function=value_function,
             target_value_function=target_value_function)
 
-        for epoch in algorithm.train(sampler, n_epochs=algorithm_params.get('n_epochs', 1000)):
+        for epoch in algorithm.train(sampler, session = sess, n_epochs=algorithm_params.get('n_epochs', 1000)):
             logz.log_tabular('Iteration', epoch)
             for k, v in algorithm.get_statistics().items():
                 logz.log_tabular(k, v)
@@ -122,6 +128,12 @@ def main():
     parser.add_argument('--exp_name', type=str, default=None)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--n_experiments', '-e', type=int, default=1)
+    parser.add_argument('--visible_gpus', type=str, default='0')
+    parser.add_argument('--single_process', action='store_true')
+    parser.add_argument('--debug', action='store_true')     
+    parser.add_argument('--reparametrize', action='store_true')    
+    parser.add_argument('--two_qf', action='store_true')
+    parser.add_argument('--old_funct', action='store_true')
     args = parser.parse_args()
 
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
@@ -142,19 +154,26 @@ def main():
                 env_name=args.env_name,
                 exp_name=args.exp_name,
                 seed=seed,
+                reparametrize = args.reparametrize,
+                two_qf = args.two_qf,
+                old_funct = args.old_funct,
                 logdir=os.path.join(logdir, '%d' % seed),
+                debug=args.debug,
+                gpu=args.visible_gpus                
             )
-        # # Awkward hacky process runs, because Tensorflow does not like
-        # # repeatedly calling train_AC in the same thread.
-        p = Process(target=train_func, args=tuple())
-        p.start()
-        processes.append(p)
-        # if you comment in the line below, then the loop will block
-        # until this process finishes
-        # p.join()
+        if args.single_process or args.debug:
+            train_func()   
+        else:
+            # # Awkward hacky process runs, because Tensorflow does not like
+            # # repeatedly calling train_AC in the same thread.
+            p = Process(target=train_func, args=tuple())
+            p.start()
+            processes.append(p)
 
-    for p in processes:
-        p.join()
+
+    if not (args.single_process or args.debug):
+        for p in processes:
+            p.join()
 
 if __name__ == '__main__':
     main()

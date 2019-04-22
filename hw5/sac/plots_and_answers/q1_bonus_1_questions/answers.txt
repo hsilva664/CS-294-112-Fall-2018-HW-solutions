@@ -1,0 +1,14 @@
+1) The baseline was an approximation of the value function. The choice was based on what was chosen in previous homeworks for Policy Gradients, since in that case that is a well-known choice that helps reduce variance
+2) Reinforce
+Advantages: does not require full rollout, lower variance due to using value-functions, policy can assume any form
+Disadvantages: higher bias due to value function, need to stop gradients from flowing through targets, which adds one more layer of approximation to the classifier
+
+Reparametrize:
+Advantages: does not require full rollout, lower variance due to using value-functions
+Disadvantages: higher bias due to value function, limited to stochastic policies
+
+3) The reparametrization trick is possible because this loss function allows nesting of expectations, with the outer expectation being under states from the replay buffer
+and the inner expectation under the policy. This nesting allows the change of variables. Since in regular PG the expectation is under the full rollout, the next state is
+dependent on previous state and action and the expression does not allow nesting.
+
+4) Because, in that case, the expectation is under the full rollout.

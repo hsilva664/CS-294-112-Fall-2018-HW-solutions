@@ -106,21 +106,53 @@ class SAC:
         if not self._reparameterize:
             ### Problem 1.3.A
             ### YOUR CODE HERE
-            raise NotImplementedError
+            on_policy_actions, log_pis = policy(self._observations_ph)
+            q_values1 = tf.squeeze(q_function([self._observations_ph, on_policy_actions]))
+            if q_function2 is not None:
+                q_values2 = tf.squeeze(q_function2([self._observations_ph, on_policy_actions]))
+                q_values = tf.minimum(q_values1, q_values2)
+            else:
+                q_values = q_values1
+            baseline = tf.squeeze(value_function(self._observations_ph))                
+            targets = self._alpha * log_pis - q_values + baseline
+            loss = tf.reduce_mean( log_pis * tf.stop_gradient(targets) )
+            return loss
         else:
             ### Problem 1.3.B
             ### YOUR CODE HERE
-            raise NotImplementedError
+            on_policy_actions, log_pis = policy(self._observations_ph)
+            q_values1 = tf.squeeze(q_function([self._observations_ph, on_policy_actions]))
+            if q_function2 is not None:
+                q_values2 = tf.squeeze(q_function2([self._observations_ph, on_policy_actions]))
+                q_values = tf.minimum(q_values1, q_values2)
+            else:
+                q_values = q_values1
+            loss = tf.reduce_mean( self._alpha*log_pis - q_values )
+            return loss
 
     def _value_function_loss_for(self, policy, q_function, q_function2, value_function):
         ### Problem 1.2.A
         ### YOUR CODE HERE
-        raise NotImplementedError
+        on_policy_actions, log_probs = policy(self._observations_ph)
+        values = tf.squeeze(value_function(self._observations_ph))
+        q_values1 = tf.squeeze(q_function([self._observations_ph, on_policy_actions]))
+        if q_function2 is not None:
+            q_values2 = tf.squeeze(q_function2([self._observations_ph, on_policy_actions]))
+            q_values = tf.minimum(q_values1, q_values2)
+        else:
+            q_values = q_values1
+        targets = q_values - self._alpha * log_probs
+        loss = tf.reduce_mean(tf.square(values - targets))
+        return loss
 
     def _q_function_loss_for(self, q_function, target_value_function):
         ### Problem 1.1.A
         ### YOUR CODE HERE
-        raise NotImplementedError
+        q_values = tf.squeeze(q_function([self._observations_ph, self._actions_ph]), axis=1)
+        target_values = tf.squeeze(target_value_function(self._next_observations_ph), axis=1)
+        targets = self._rewards_ph + self._discount * (1 - self._terminals_ph) * target_values
+        loss = tf.reduce_mean(tf.square(q_values - targets ) )
+        return loss
 
     def _create_target_update(self, source, target):
         """Create tensorflow operations for updating target value function."""
@@ -131,7 +163,7 @@ class SAC:
                                       trainable_variables)
         ]
 
-    def train(self, sampler, n_epochs=1000):
+    def train(self, sampler, session = tf.get_default_session(),n_epochs=1000):
         """Return a generator that performs RL training.
 
         Args:
@@ -154,8 +186,8 @@ class SAC:
                     self._rewards_ph: batch['rewards'],
                     self._terminals_ph: batch['terminals'],
                 }
-                tf.get_default_session().run(self._training_ops, feed_dict)
-                tf.get_default_session().run(self._target_update_ops)
+                session.run(self._training_ops, feed_dict)
+                session.run(self._target_update_ops)
 
             yield epoch
 

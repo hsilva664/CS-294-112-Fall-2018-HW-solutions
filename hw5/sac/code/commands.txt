@@ -1,0 +1,5 @@
+python3 train_mujoco.py --env_name HalfCheetah-v2 --exp_name reinf -e 3 --visible_gpus 0 
+python3 train_mujoco.py --env_name HalfCheetah-v2 --exp_name reparam -e 3 --visible_gpus 1 --reparametrize
+
+python3 train_mujoco.py --env_name Ant-v2 --exp_name reparam -e 3 --reparametrize --visible_gpus 0
+python3 train_mujoco.py --env_name Ant-v2 --exp_name reparam_2qf -e 3 --reparametrize --two_qf --visible_gpus 1

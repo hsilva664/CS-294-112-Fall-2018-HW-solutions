@@ -44,12 +44,13 @@ class ValueFunction(Network):
 
 
 class GaussianPolicy(Network):
-    def __init__(self, action_dim, hidden_layer_sizes, reparameterize, **kwargs):
+    def __init__(self, action_dim, hidden_layer_sizes, reparameterize, old_funct, **kwargs):
         super(GaussianPolicy, self).__init__(**kwargs)
         self._action_dim = action_dim
         self._f = None
         self._hidden_layer_sizes = hidden_layer_sizes
         self._reparameterize = reparameterize
+        self._old_funct = old_funct
 
     def build(self, input_shape):
         inputs = layers.Input(batch_shape=input_shape, name='observations')
@@ -74,16 +75,14 @@ class GaussianPolicy(Network):
             if not self._reparameterize:
                 ### Problem 1.3.A
                 ### YOUR CODE HERE
-                raise NotImplementedError
+                raw_actions = tf.stop_gradient(raw_actions)
             log_probs = distribution.log_prob(raw_actions)
             log_probs -= self._squash_correction(raw_actions)
 
-            actions = None
             ### Problem 2.A
             ### YOUR CODE HERE
-            raise NotImplementedError
-
-            return actions, log_probs
+            actions = tf.tanh(raw_actions)
+            return [actions, log_probs]
 
         samples, log_probs = layers.Lambda(create_distribution_layer)(
             mean_and_log_std)
@@ -94,7 +93,10 @@ class GaussianPolicy(Network):
     def _squash_correction(self, raw_actions):
         ### Problem 2.B
         ### YOUR CODE HERE
-        raise NotImplementedError
+        if self._old_funct:
+            return tf.reduce_sum(tf.log(tf.maximum(1 - tf.square(tf.tanh(raw_actions)), 1e-8) ), axis = 1)
+        else:
+            return tf.reduce_sum(2*(tf.log(2.) - (tf.nn.softplus(2*raw_actions) - raw_actions) ) , axis = 1)
 
     def eval(self, observation):
         assert self.built and observation.ndim == 1
@@ -104,3 +106,4 @@ class GaussianPolicy(Network):
 
         action, = self._f([observation[None]])
         return action.flatten()
+
