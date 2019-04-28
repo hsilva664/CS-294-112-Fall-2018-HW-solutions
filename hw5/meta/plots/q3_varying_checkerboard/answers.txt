@@ -1,0 +1,5 @@
+The x,y goal coordinates that had been previously randomly generated between [-10,10) were now generated in separate regions for training and eval.
+The [-10,10] region was divided using a checkerboard pattern, where the length of each tile was speciffied as the parameter delta. Even tiles were
+used for training and odd ones were used for testing. For delta in {3,5,10}, no significant performance difference was observed between training and
+testing for the recurrent model, which indicates that the algorithm generalizes well even to tasks that were not seen during training (although they are
+still similar to training tasks).

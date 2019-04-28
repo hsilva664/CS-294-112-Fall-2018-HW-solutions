@@ -1,0 +1,1 @@
+For history sizes [10,30,60,100], recurrent models greatly outperformed their non-recurrent counterparts (for approx 30K params in all runs). Experiments suggest that a minimal history of 30 is needed.

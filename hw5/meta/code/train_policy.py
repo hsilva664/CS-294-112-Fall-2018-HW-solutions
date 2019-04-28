@@ -17,6 +17,7 @@ import os
 import time
 import inspect
 from multiprocessing import Process
+from tensorflow.python import debug as tf_debug
 
 from replay_buffer import ReplayBuffer, PPOReplayBuffer
 
@@ -75,6 +76,14 @@ def build_rnn(x, h, output_size, scope, n_layers, size, activation=tf.tanh, outp
     #                           ----------PROBLEM 2----------
     #====================================================================================#
     # YOUR CODE HERE
+    # x = tf.reshape(x, [-1, x.shape[1]*x.shape[2]])
+    encoded = build_mlp(x, size, scope, n_layers, size, activation=activation, output_activation=output_activation, regularizer=regularizer)
+    cell = tf.nn.rnn_cell.GRUCell(output_size, activation=activation, reuse = tf.AUTO_REUSE)
+    for i in range(encoded.shape[1]):
+        output, h = cell(encoded[:,i,:],h)    
+    return output, h
+
+
 
 def build_policy(x, h, output_size, scope, n_layers, size, gru_size, recurrent=True, activation=tf.tanh, output_activation=None):
     """
@@ -146,7 +155,7 @@ def setup_logger(logdir, locals_):
 
 
 class Agent(object):
-    def __init__(self, computation_graph_args, sample_trajectory_args, estimate_return_args):
+    def __init__(self, computation_graph_args, sample_trajectory_args, estimate_return_args, debug, gpu):
         super(Agent, self).__init__()
         self.ob_dim = computation_graph_args['ob_dim']
         self.ac_dim = computation_graph_args['ac_dim']
@@ -176,10 +185,15 @@ class Agent(object):
         self.replay_buffer = ReplayBuffer(100000, [self.history, self.meta_ob_dim], [self.ac_dim], self.gru_size, self.task_dim)
         self.val_replay_buffer = ReplayBuffer(100000, [self.history, self.meta_ob_dim], [self.ac_dim], self.gru_size, self.task_dim)
 
+        self.debug = debug
+        self.gpu = gpu
+
     def init_tf_sess(self):
-        tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
-        tf_config.gpu_options.allow_growth = True # may need if using GPU
+        gpu_options = tf.GPUOptions(allow_growth=True,visible_device_list=self.gpu)
+        tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1, gpu_options=gpu_options)
         self.sess = tf.Session(config=tf_config)
+        if self.debug:
+            self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)        
         self.sess.__enter__() # equivalent to `with self.sess:`
         tf.global_variables_initializer().run() #pylint: disable=E1101
 
@@ -378,26 +392,36 @@ class Agent(object):
                 # set a, r, d to zero, construct first meta observation in meta_obs
                 # YOUR CODE HERE
 
+                a = np.zeros((self.ac_dim,), dtype=np.float32)
+                r = np.zeros((self.reward_dim,), dtype=np.float32)
+                d = np.zeros((self.terminal_dim,), dtype=np.float32)
+
+                meta_obs[ep_steps + self.history - 1,:] = np.concatenate([ob, a, r, d], axis=0)
+
                 steps += 1
 
             # index into the meta_obs array to get the window that ends with the current timestep
             # please name the windowed observation `in_` for compatibilty with the code that adds to the replay buffer (lines 418, 420)
             # YOUR CODE HERE
 
+            in_ = np.expand_dims(meta_obs[ep_steps:(ep_steps + self.history),:], axis=0)
             hidden = np.zeros((1, self.gru_size), dtype=np.float32)
 
             # get action from the policy
             # YOUR CODE HERE
+            ac = self.sess.run(self.sy_sampled_ac, feed_dict={self.sy_ob_no: in_, self.sy_hidden: hidden})
+            ac = ac[0]
 
             # step the environment
             # YOUR CODE HERE
-
+            ob, rew, done, _ = env.step(ac)
             ep_steps += 1
 
+            rew = np.array([rew], dtype=np.float32)
             done = bool(done) or ep_steps == self.max_path_length
             # construct the meta-observation and add it to meta_obs
-            # YOUR CODE HERE
-
+            # YOUR CODE HERE            
+            meta_obs[ep_steps + self.history - 1, :] = np.concatenate( [ob, ac, rew, np.array([done], dtype=np.float32)], axis=0)
             rewards.append(rew)
             steps += 1
 
@@ -599,6 +623,10 @@ def train_PG(
         num_tasks,
         l2reg,
         recurrent,
+        debug,
+        gpu,
+        disjoint_sets,
+        delta
         ):
 
     start = time.time()
@@ -616,8 +644,10 @@ def train_PG(
     envs = {'pm': PointEnv,
             'pm-obs': ObservedPointEnv,
             }
-    env = envs[env_name](num_tasks)
-
+    if env_name == 'pm':
+        env = envs[env_name](num_tasks, disjoint_sets, delta)
+    else:
+        env = envs[env_name](num_tasks)
     # Set random seeds
     tf.set_random_seed(seed)
     np.random.seed(seed)
@@ -661,11 +691,20 @@ def train_PG(
         'normalize_advantages': normalize_advantages,
     }
 
-    agent = Agent(computation_graph_args, sample_trajectory_args, estimate_return_args)
+    agent = Agent(computation_graph_args, sample_trajectory_args, estimate_return_args, debug, gpu)
 
     # build computation graph
     agent.build_computation_graph()
 
+    def num_params():
+        all_vars = tf.trainable_variables()
+        params = 0
+        for s_var in all_vars:
+            s_shape = 1
+            for i in s_var.shape:
+                s_shape *= i
+            params += s_shape
+        return params
 
     # tensorflow: config, session, variable initialization
     agent.init_tf_sess()
@@ -788,6 +827,11 @@ def main():
     parser.add_argument('--history', '-ho', type=int, default=1)
     parser.add_argument('--l2reg', '-reg', action='store_true')
     parser.add_argument('--recurrent', '-rec', action='store_true')
+    parser.add_argument('--single_process', action='store_true')
+    parser.add_argument('--debug', action='store_true')      
+    parser.add_argument('--visible_gpus', type=str, default='0')
+    parser.add_argument('--disjoint_sets', action='store_true')  
+    parser.add_argument('--delta', type=int, default=1)    
     args = parser.parse_args()
 
     if not(os.path.exists('data')):
@@ -829,18 +873,24 @@ def main():
                 num_tasks=args.num_tasks,
                 l2reg=args.l2reg,
                 recurrent=args.recurrent,
+                debug=args.debug,
+                gpu=args.visible_gpus,
+                disjoint_sets = args.disjoint_sets,
+                delta = args.delta
                 )
-        # # Awkward hacky process runs, because Tensorflow does not like
-        # # repeatedly calling train_PG in the same thread.
-        p = Process(target=train_func, args=tuple())
-        p.start()
-        processes.append(p)
-        # if you comment in the line below, then the loop will block
-        # until this process finishes
-        # p.join()
 
-    for p in processes:
-        p.join()
+        if args.single_process or args.debug:
+            train_func()
+        else:
+            # # Awkward hacky process runs, because Tensorflow does not like
+            # # repeatedly calling train_PG in the same thread.
+            p = Process(target=train_func, args=tuple())
+            p.start()
+            processes.append(p)
+
+    if not (args.single_process or args.debug):
+        for p in processes:
+            p.join()
 
 
 if __name__ == "__main__":
